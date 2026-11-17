@@ -54,4 +54,7 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.osmdroid.android)
+
+    // NewBlackbox core AAR(s) built by the GitHub workflow into app/libs
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
 }
