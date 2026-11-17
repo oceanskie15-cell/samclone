@@ -1,6 +1,7 @@
 package com.samcloner.app.engine
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import com.samcloner.app.model.ClonedApp
@@ -49,11 +50,29 @@ class StubVirtualEngine(private val context: Context) : VirtualEngine {
                 "Launching ${clone.customLabel} (${clone.originalPackageName}) in space #${clone.userId}"
             )
             // TODO: BlackBoxCore.get().launchApk(clone.originalPackageName, clone.userId)
-            Result.success(
-                "Launched ${clone.customLabel} (Space #${clone.userId + 1})" +
-                    if (clone.virtualLocation.enabled) " • GPS: ${clone.virtualLocation.label}" else "" +
-                    if (clone.deviceDisguise.enabled) " • Device: ${clone.deviceDisguise.model}" else ""
-            )
+
+            // No virtualization engine yet, so fall back to opening the real installed app.
+            // This is NOT an isolated clone: it runs the original app, without GPS/device spoofing.
+            val launchIntent = context.packageManager
+                .getLaunchIntentForPackage(clone.originalPackageName)
+                ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (launchIntent == null) {
+                Result.failure(
+                    IllegalStateException(
+                        "${clone.customLabel} is not installed or has no launchable screen"
+                    )
+                )
+            } else {
+                try {
+                    context.startActivity(launchIntent)
+                    Result.success(
+                        "Opened original ${clone.customLabel} (isolated clone space not available yet)"
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to open ${clone.originalPackageName}", e)
+                    Result.failure(e)
+                }
+            }
         }
 
     override suspend fun uninstallClone(clone: ClonedApp): Result<Unit> =
