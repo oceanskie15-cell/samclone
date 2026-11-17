@@ -73,7 +73,7 @@ fun HomeScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Tap "Clone App" to create an isolated multi-account space with custom name, virtual GPS, and device disguise.",
+                        "Tap \"Clone App\" to create an isolated multi-account space with custom name, virtual GPS, and device disguise.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
