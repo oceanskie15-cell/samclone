@@ -19,6 +19,28 @@ class BlackBoxEngine(private val context: Context) : VirtualEngine {
 
     companion object {
         private const val TAG = "SamClonerEngine"
+
+        // Google services the clone needs; copied from the phone into the clone space when present.
+        private val GMS_PACKAGES = listOf(
+            "com.google.android.gsf",
+            "com.google.android.gms",
+            "com.google.android.gsf.login",
+            "com.android.vending"
+        )
+    }
+
+    private fun ensureGmsInSpace(userId: Int) {
+        val prefs = context.getSharedPreferences("sam_cloner_engine", Context.MODE_PRIVATE)
+        val key = "gms_installed_$userId"
+        if (prefs.getBoolean(key, false)) return
+        GMS_PACKAGES.forEach { pkg ->
+            val onPhone = runCatching { context.packageManager.getPackageInfo(pkg, 0) }.isSuccess
+            if (onPhone) {
+                runCatching { BlackBoxCore.get().installPackageAsUser(pkg, userId) }
+                    .onFailure { Log.w(TAG, "Google services: could not add $pkg to space #$userId", it) }
+            }
+        }
+        prefs.edit().putBoolean(key, true).apply()
     }
 
     override fun initialize() {
@@ -54,6 +76,7 @@ class BlackBoxEngine(private val context: Context) : VirtualEngine {
             applyLocationConfig(clone)
             applyDeviceConfig(clone)
             runCatching {
+                withContext(Dispatchers.IO) { ensureGmsInSpace(clone.userId) }
                 // launchApk returns Boolean in the original API; `as? Boolean ?: true` also tolerates Unit.
                 val result: Any? = BlackBoxCore.get().launchApk(clone.originalPackageName, clone.userId)
                 val ok = result as? Boolean ?: true
