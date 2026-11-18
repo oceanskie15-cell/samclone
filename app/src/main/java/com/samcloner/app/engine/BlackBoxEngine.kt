@@ -73,10 +73,11 @@ class BlackBoxEngine(private val context: Context) : VirtualEngine {
 
     override suspend fun launchClone(clone: ClonedApp): Result<String> =
         withContext(Dispatchers.Main) {
+            runCatching { withContext(Dispatchers.IO) { ensureGmsInSpace(clone.userId) } }
+                .onFailure { Log.w(TAG, "Google services setup failed", it) }
             applyLocationConfig(clone)
             applyDeviceConfig(clone)
             runCatching {
-                withContext(Dispatchers.IO) { ensureGmsInSpace(clone.userId) }
                 // launchApk returns Boolean in the original API; `as? Boolean ?: true` also tolerates Unit.
                 val result: Any? = BlackBoxCore.get().launchApk(clone.originalPackageName, clone.userId)
                 val ok = result as? Boolean ?: true
@@ -137,6 +138,11 @@ class BlackBoxEngine(private val context: Context) : VirtualEngine {
         lastLocationError = setVirtualLocation(
             clone.userId, clone.originalPackageName, cfg.enabled, cfg.latitude, cfg.longitude
         )
+        // Apps like Instamart ask Google Play services for the location, and Play services runs
+        // inside the same clone space, so it needs the same fake location as the app itself.
+        GMS_PACKAGES.forEach { gms ->
+            setVirtualLocation(clone.userId, gms, cfg.enabled, cfg.latitude, cfg.longitude)
+        }
     }
 
     override suspend fun applyDeviceConfig(clone: ClonedApp) {
