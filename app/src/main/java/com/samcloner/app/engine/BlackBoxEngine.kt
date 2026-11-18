@@ -81,7 +81,12 @@ class BlackBoxEngine(private val context: Context) : VirtualEngine {
                 val result: Any? = BlackBoxCore.get().launchApk(clone.originalPackageName, clone.userId)
                 val ok = result as? Boolean ?: true
                 if (!ok) error("Engine could not start ${clone.customLabel}")
-                "Opened ${clone.customLabel} in space #${clone.userId}"
+                val gps = when {
+                    !clone.virtualLocation.enabled -> ""
+                    lastLocationError == null -> " with virtual GPS (${clone.virtualLocation.label})"
+                    else -> " (virtual GPS failed: $lastLocationError)"
+                }
+                "Opened ${clone.customLabel} in space #${clone.userId}$gps"
             }.onFailure { Log.e(TAG, "launchClone failed", it) }
         }
 
@@ -93,9 +98,45 @@ class BlackBoxEngine(private val context: Context) : VirtualEngine {
             }.onFailure { Log.e(TAG, "uninstallClone failed", it) }
         }
 
-    // Not wired yet: get plain cloning + Run working first, then hook these up.
+    /**
+     * Virtual GPS through NewBlackbox's BLocationManager. Called by reflection so a wrong
+     * name in the engine only produces a log line / status note instead of breaking the build.
+     * Returns null on success, or a short reason when it failed.
+     */
+    private fun setVirtualLocation(userId: Int, pkg: String, enabled: Boolean, lat: Double, lng: Double): String? =
+        runCatching {
+            val mgrClass = Class.forName("top.niunaijun.blackbox.fake.frameworks.BLocationManager")
+            val mgr = mgrClass.getMethod("get").invoke(null)
+            val int = Int::class.javaPrimitiveType
+            val setPattern = mgrClass.getMethod("setPattern", int, String::class.java, int)
+            fun mode(name: String, fallback: Int) =
+                runCatching { mgrClass.getField(name).getInt(null) }.getOrDefault(fallback)
+
+            if (enabled) {
+                val locClass = Class.forName("top.niunaijun.blackbox.entity.location.BLocation")
+                val dbl = Double::class.javaPrimitiveType
+                val loc = locClass.getConstructor(dbl, dbl).newInstance(lat, lng)
+                setPattern.invoke(mgr, userId, pkg, mode("OWN_MODE", 2))
+                mgrClass.getMethod("setLocation", int, String::class.java, locClass)
+                    .invoke(mgr, userId, pkg, loc)
+                Log.i(TAG, "Virtual GPS set for $pkg#$userId: $lat, $lng")
+            } else {
+                setPattern.invoke(mgr, userId, pkg, mode("CLOSE_MODE", 0))
+            }
+            null
+        }.getOrElse {
+            val cause = it.cause ?: it
+            Log.e(TAG, "Virtual GPS failed for $pkg#$userId", cause)
+            "${cause.javaClass.simpleName}: ${cause.message}"
+        }
+
+    @Volatile private var lastLocationError: String? = null
+
     override suspend fun applyLocationConfig(clone: ClonedApp) {
-        if (clone.virtualLocation.enabled) Log.i(TAG, "Virtual GPS requested (not wired yet) for ${clone.originalPackageName}")
+        val cfg = clone.virtualLocation
+        lastLocationError = setVirtualLocation(
+            clone.userId, clone.originalPackageName, cfg.enabled, cfg.latitude, cfg.longitude
+        )
     }
 
     override suspend fun applyDeviceConfig(clone: ClonedApp) {
