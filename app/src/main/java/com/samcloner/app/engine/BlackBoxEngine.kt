@@ -1,6 +1,11 @@
 package com.samcloner.app.engine
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.location.LocationManager
+import androidx.core.content.ContextCompat
+import androidx.core.location.LocationManagerCompat
 import android.net.Uri
 import android.util.Log
 import com.samcloner.app.model.ClonedApp
@@ -84,8 +89,8 @@ class BlackBoxEngine(private val context: Context) : VirtualEngine {
                 if (!ok) error("Engine could not start ${clone.customLabel}")
                 val gps = when {
                     !clone.virtualLocation.enabled -> ""
-                    lastLocationError == null -> " with virtual GPS (${clone.virtualLocation.label})"
-                    else -> " (virtual GPS failed: $lastLocationError)"
+                    lastLocationError == null -> " with virtual GPS (${clone.virtualLocation.label}) [${gpsDiagnostics(clone)}]"
+                    else -> " (virtual GPS failed: $lastLocationError) [${gpsDiagnostics(clone)}]"
                 }
                 "Opened ${clone.customLabel} in space #${clone.userId}$gps"
             }.onFailure { Log.e(TAG, "launchClone failed", it) }
@@ -132,6 +137,33 @@ class BlackBoxEngine(private val context: Context) : VirtualEngine {
         }
 
     @Volatile private var lastLocationError: String? = null
+
+    /** Short readout of what the phone and the engine report, shown after Run so problems are visible. */
+    private fun gpsDiagnostics(clone: ClonedApp): String {
+        val perm = if (
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        ) "ok" else "MISSING"
+        val phone = runCatching {
+            val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            if (LocationManagerCompat.isLocationEnabled(lm)) "on" else "OFF"
+        }.getOrDefault("?")
+        val (pattern, pin) = runCatching {
+            val c = Class.forName("top.niunaijun.blackbox.fake.frameworks.BLocationManager")
+            val m = c.getMethod("get").invoke(null)
+            val int = Int::class.javaPrimitiveType
+            val pat = c.getMethod("getPattern", int, String::class.java)
+                .invoke(m, clone.userId, clone.originalPackageName)
+            val loc = c.getMethod("getLocation", int, String::class.java)
+                .invoke(m, clone.userId, clone.originalPackageName)
+            val ll = if (loc == null) "none" else runCatching {
+                "${loc.javaClass.getMethod("getLatitude").invoke(loc)}," +
+                    "${loc.javaClass.getMethod("getLongitude").invoke(loc)}"
+            }.getOrDefault(loc.toString())
+            pat.toString() to ll
+        }.getOrElse { "?" to "?" }
+        return "permission=$perm, phone location=$phone, mode=$pattern, pin=$pin"
+    }
 
     override suspend fun applyLocationConfig(clone: ClonedApp) {
         val cfg = clone.virtualLocation
