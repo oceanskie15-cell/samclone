@@ -22,10 +22,19 @@ jobs:
           git clone --depth 1 https://github.com/ALEX5402/NewBlackbox.git /tmp/nbb
           cd /tmp/nbb
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew :Bcore:assembleRelease --no-daemon
           mkdir -p "$GITHUB_WORKSPACE/app/libs"
           find . -name "*.aar" -path "*outputs/aar*" -exec cp {} "$GITHUB_WORKSPACE/app/libs/" \;
-          ls -la "$GITHUB_WORKSPACE/app/libs"
+          find black-reflection -name "*.jar" -path "*build/libs*" -exec cp {} "$GITHUB_WORKSPACE/app/libs/" \; || true
+          {
+            echo 'dependencies {'
+            grep -E '^[[:space:]]*(implementation|api)[[:space:]]' Bcore/build.gradle \
+              | grep -oE "['\"][A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:[A-Za-z0-9_.+-]+['\"]" \
+              | tr -d "'\"" | sort -u | sed 's/.*/    add("implementation", "&")/'
+            echo '}'
+          } > "$GITHUB_WORKSPACE/app/bcore-deps.gradle.kts"
+          echo "--- libs ---"; ls -la "$GITHUB_WORKSPACE/app/libs"
+          echo "--- extra deps ---"; cat "$GITHUB_WORKSPACE/app/bcore-deps.gradle.kts"
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
