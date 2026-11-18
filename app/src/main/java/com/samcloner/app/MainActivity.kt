@@ -1,12 +1,17 @@
 package com.samcloner.app
 
+import android.Manifest
 import android.os.Bundle
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
@@ -26,9 +31,21 @@ import com.samcloner.app.ui.theme.SamClonerTheme
 import com.samcloner.app.ui.viewmodel.SamClonerViewModel
 
 class MainActivity : ComponentActivity() {
+
+    // Cloned apps use Sam Cloner's permissions, so ask for location here.
+    private val locationPermissionRequest = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        locationPermissionRequest.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+        )
         val launchCloneId = intent?.getStringExtra("launch_clone_id")
 
         setContent {
@@ -48,11 +65,30 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                var launchDetails by remember { mutableStateOf<String?>(null) }
+
                 LaunchedEffect(statusMessage) {
                     statusMessage?.let {
-                        snackbarHostState.showSnackbar(it)
-                        vm.clearStatus()
+                        if (it.startsWith("Opened") || it.contains("failed")) {
+                            // Long launch messages (GPS details) go in a dialog so they stay readable.
+                            launchDetails = it
+                            vm.clearStatus()
+                        } else {
+                            snackbarHostState.showSnackbar(it)
+                            vm.clearStatus()
+                        }
                     }
+                }
+
+                launchDetails?.let { details ->
+                    AlertDialog(
+                        onDismissRequest = { launchDetails = null },
+                        confirmButton = {
+                            TextButton(onClick = { launchDetails = null }) { Text("OK") }
+                        },
+                        title = { Text("Launch details (v3)") },
+                        text = { Text(details) }
+                    )
                 }
 
                 Scaffold(
